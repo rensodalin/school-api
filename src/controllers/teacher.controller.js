@@ -44,14 +44,73 @@ export const createTeacher = async (req, res) => {
  *   get:
  *     summary: Get all teachers
  *     tags: [Teachers]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10 }
+ *         description: Number of items per page
+ *       - in: query
+ *         name: sort
+ *         schema: { type: string, enum: [asc, desc], default: desc }
+ *         description: Sort order (asc or desc)
+ *       - in: query
+ *         name: populate
+ *         schema: { type: string }
+ *         description: Comma-separated list of relations to populate (courses)
  *     responses:
  *       200:
  *         description: List of teachers
  */
 export const getAllTeachers = async (req, res) => {
+    // Pagination
+    const limit = parseInt(req.query.limit) || 10;
+    const page = parseInt(req.query.page) || 1;
+    
+    // Sorting
+    const sort = req.query.sort || 'desc';
+    const order = [['createdAt', sort.toUpperCase()]];
+    
+    // Populate/Include relations
+    const populate = req.query.populate;
+    let include = [];
+    
+    if (populate) {
+        const relations = populate.split(',').map(rel => rel.trim());
+        relations.forEach(relation => {
+            switch (relation.toLowerCase()) {
+                case 'courses':
+                    include.push(db.Course);
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
     try {
-        const teachers = await db.Teacher.findAll({ include: db.Course });
-        res.json(teachers);
+        const total = await db.Teacher.count();
+        
+        const teachers = await db.Teacher.findAll({
+            include: include,
+            limit: limit,
+            offset: (page - 1) * limit,
+            order: order
+        });
+        
+        res.json({
+            meta: {
+                totalItems: total,
+                page: page,
+                totalPages: Math.ceil(total / limit),
+                sort: sort,
+                populate: populate || null
+            },
+            data: teachers,
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -68,6 +127,10 @@ export const getAllTeachers = async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *       - in: query
+ *         name: populate
+ *         schema: { type: string }
+ *         description: Comma-separated list of relations to populate (courses)
  *     responses:
  *       200:
  *         description: Teacher found
@@ -75,8 +138,28 @@ export const getAllTeachers = async (req, res) => {
  *         description: Not found
  */
 export const getTeacherById = async (req, res) => {
+    // Populate/Include relations
+    const populate = req.query.populate;
+    let include = [];
+    
+    if (populate) {
+        const relations = populate.split(',').map(rel => rel.trim());
+        relations.forEach(relation => {
+            switch (relation.toLowerCase()) {
+                case 'courses':
+                    include.push(db.Course);
+                    break;
+                default:
+                    break;
+            }
+        });
+    } else {
+        // Default include all relations for single item
+        include = [db.Course];
+    }
+
     try {
-        const teacher = await db.Teacher.findByPk(req.params.id, { include: db.Course });
+        const teacher = await db.Teacher.findByPk(req.params.id, { include: include });
         if (!teacher) return res.status(404).json({ message: 'Not found' });
         res.json(teacher);
     } catch (err) {
@@ -108,7 +191,7 @@ export const getTeacherById = async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Updated
+ *         description: Teacher updated
  */
 export const updateTeacher = async (req, res) => {
     try {
@@ -134,7 +217,7 @@ export const updateTeacher = async (req, res) => {
  *         schema: { type: integer }
  *     responses:
  *       200:
- *         description: Deleted
+ *         description: Teacher deleted
  */
 export const deleteTeacher = async (req, res) => {
     try {
